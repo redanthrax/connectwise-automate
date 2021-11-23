@@ -1,4 +1,22 @@
-# Notes
+# Automate WAF using nginx and modsecurity
+
+Instructions provided as-is. Hit me up for questions on MSPGeek Slack.
+
+This configuration is for use with the context that most of your users will use the Automate webapp. If you require use of the fat client I recommend accessing the Automate server directly.
+
+Example 1:
+
+Below shows a direct connection. In the fat client users will use the IP of the Automate server to connect.
+
+IT Office Site -> Azure S2S VPN -> Automate Server
+
+Example 2:
+
+Below shows a remote connection from an external user.
+
+Work-From-Home Users -> Automate WAF -> Automate Server.
+
+Example 2 is limited to the webapp functions. The fat client isn't supported and external direct access to the server is restricted to the WAF.
 
 ## Deploy Debian 11 Bullseye to Azure
 
@@ -146,6 +164,17 @@ wget https://github.com/coreruleset/coreruleset/archive/refs/tags/v3.3.2.tar.gz
 tar -xzvf v3.3.2.tar.gz
 sudo mv coreruleset-3.3.2 /usr/local
 sudo cp /usr/local/coreruleset-3.3.2/crs-setup.conf.example /usr/local/coreruleset-3.3.2/crs-setup.conf
+```
+
+Create an IP Blacklist if needed.
+
+```
+sudo vim /etc/nginx/modsec/ipblacklist.conf
+```
+
+Setup the main automate rules.
+
+```
 sudo vim /etc/nginx/modsec/automate.conf
 ```
 
@@ -179,13 +208,24 @@ Include /usr/local/coreruleset-3.3.2/rules/RESPONSE-954-DATA-LEAKAGES-IIS.conf
 Include /usr/local/coreruleset-3.3.2/rules/RESPONSE-959-BLOCKING-EVALUATION.conf
 Include /usr/local/coreruleset-3.3.2/rules/RESPONSE-980-CORRELATION.conf
 Include /usr/local/coreruleset-3.3.2/rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf
-SecRule REQUEST_URI "/Labtech/ControlCenter.asmx" "id:1,phase:1,allow"
-SecRule REQUEST_URI "\/cwa\/api\/v1\/computers\/.+\/scripthistory" "id:2,phase:1,allow"
-SecRule REQUEST_URI "\/cwa\/api\/v1\/computers\/.+\/services" "id:3,phase:1,allow"
-SecRule REQUEST_URI "\/cwa\/api\/v1\/computers\/.+\/scripthistory" "id:4,phase:1,allow"
+
+Include /etc/nginx/modsec/ipblacklist.conf
+
+SecRule REQUEST_URI "/Labtech/ControlCenter.asmx" "id:1,phase:1,allow,nolog"
+SecRule REQUEST_URI "\/cwa\/api\/v1\/computers\/.+\/scripthistory" "id:2,phase:1,allow,nolog"
+SecRule REQUEST_URI "\/cwa\/api\/v1\/computers\/.+\/services" "id:3,phase:1,allow,nolog"
+SecRule REQUEST_URI "\/cwa\/api\/v1\/computers\/.+\/scripthistory" "id:4,phase:1,allow,nolog"
+SecRule REQUEST_URI "\/LabTech\/agent.aspx" "id:5,phase:1,allow,nolog"
+SecRule REQUEST_URI "\/LabTech\/Upload.aspx" "id:6,phase:1,allow,nolog"
+SecRule REQUEST_URI "\/cwa\/api\/v1\/computers\/.+\/extrafields\/.+" "id:8,phase:1,allow,nolog"
+SecRule REQUEST_URI "\/cwa\/api\/v1\/users\/.+\/settings\/browse_computers_grid_config" "id:9,phase:1,allow,nolog"
+SecRule REQUEST_URI "\/cwa\/api\/v1\/[Cc]omputers.+" "id:10,phase:1,allow,nolog"
+SecRule REQUEST_URI "\/cwa\/api\/v1\/InternalMonitorResults.+" "id:11,phase:1,allow,nolog"
+SecRule REQUEST_URI "\/cwa\/api\/v1\/networkdevices.+" "id:12,phase:1,allow,nolog"
+SecRule REQUEST_URI "\/cwa\/api\/v1\/Monitors.+" "id:13,phase:1,allow,nolog"
 ```
 
-Move example rules.
+Move example rules to live.
 
 ```
 sudo mv /usr/local/coreruleset-3.3.2/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf.example /usr/local/coreruleset-3.3.2/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf
@@ -261,7 +301,19 @@ Update all API access (Vendors, Scripts etc).
 
 Lock down all traffic to the Automate server to only allow from the IP of the reverse proxy IP.
 
+## Monitoring
+
+Monitor the error log to see what is being blocked. If you have issues with the Automate webapp this is the first step to understanding the issue.
+
+```
+tail -f /var/log/nginx/automate-error.log
+```
+
+If your drive fills with logs you may need to tune the rules or move your logs to a larger drive attached to the VM.
+
 ## OPTIONAL: Blocking traffic by country
+This option is likely going to block most exploitation attempts.
+
 Download "GeoLite2 Country" from here https://www.maxmind.com/en/accounts/584942/geoip/downloads you will make an account, it's free.
 
 Transfer the file to your server (scp).
@@ -299,4 +351,4 @@ Validate the nginx test is okay.
 sudo nginx -s reload
 ```
 
-Validate you're blocking countries outside the US
+Validate you're blocking countries outside the US.
